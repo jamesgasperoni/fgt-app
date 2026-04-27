@@ -7,10 +7,17 @@ function today() {
   return new Date().toISOString().slice(0, 10)
 }
 
+function toNum(val) {
+  if (val === null || val === undefined || val === '') return 0
+  var n = parseFloat(String(val).replace(/,/g, '').replace(/[^0-9.]/g, ''))
+  return isNaN(n) ? 0 : n
+}
+
 export default function Income() {
   var [txns, setTxns] = useState([])
   var [loading, setLoading] = useState(true)
   var [toast, setToast] = useState('')
+  var [autoPaid, setAutoPaid] = useState(null)
 
   var [date, setDate] = useState(today())
   var [customer, setCustomer] = useState('')
@@ -30,17 +37,31 @@ export default function Income() {
     setLoading(false)
   }
 
-  async function save() {
-    if (!date || !customer.trim() || !amountReceived || parseFloat(amountReceived) <= 0) {
-      alert('Date, customer name, and amount received are required.')
-      return
+  async function onJobNumberChange(val) {
+    setJobNumber(val)
+    setAutoPaid(null)
+    if (val.trim()) {
+      var jRes = await supabase.from('jobs').select('*').eq('job_number', val.trim()).single()
+      if (jRes.data) {
+        setAutoPaid(jRes.data)
+        if (!customer) setCustomer(jRes.data.customer)
+        if (!amountInvoiced) setAmountInvoiced(String(jRes.data.invoice_amount || ''))
+      }
     }
-    var noteText = note || (amountInvoiced ? 'Invoiced: $' + parseFloat(amountInvoiced).toFixed(2) : null)
+  }
+
+  async function save() {
+    var amt = toNum(amountReceived)
+    if (!date) { alert('Please fill in the date.'); return }
+    if (!customer.trim()) { alert('Please fill in the customer name.'); return }
+    if (amt <= 0) { alert('Please enter a valid amount received.'); return }
+
+    var noteText = note || (amountInvoiced ? 'Invoiced: $' + toNum(amountInvoiced).toFixed(2) : null)
     var res = await supabase.from('transactions').insert({
       date: date,
       vendor: customer.trim(),
       category: 'Revenue',
-      amount: parseFloat(amountReceived),
+      amount: amt,
       method: method,
       job_number: jobNumber || null,
       note: noteText,
@@ -50,7 +71,14 @@ export default function Income() {
       alert('Error saving: ' + res.error.message)
       return
     }
-    showToast('Payment recorded')
+
+    if (jobNumber.trim() && autoPaid) {
+      await supabase.from('jobs').update({ status: 'paid' }).eq('id', autoPaid.id)
+      showToast('Payment recorded — Job #' + jobNumber + ' automatically marked as paid')
+    } else {
+      showToast('Payment recorded')
+    }
+
     setDate(today())
     setCustomer('')
     setAmountInvoiced('')
@@ -58,6 +86,7 @@ export default function Income() {
     setMethod('Check')
     setJobNumber('')
     setNote('')
+    setAutoPaid(null)
     load()
   }
 
@@ -70,7 +99,7 @@ export default function Income() {
 
   function showToast(m) {
     setToast(m)
-    setTimeout(function() { setToast('') }, 2500)
+    setTimeout(function() { setToast('') }, 3500)
   }
 
   function clearForm() {
@@ -81,13 +110,7 @@ export default function Income() {
     setMethod('Check')
     setJobNumber('')
     setNote('')
-  }
-
-  function onMoneyInput(setter) {
-    return function(e) {
-      var val = e.target.value.replace(/[^0-9.]/g, '')
-      setter(val)
-    }
+    setAutoPaid(null)
   }
 
   var totalReceived = txns.reduce(function(s, t) { return s + Number(t.amount) }, 0)
@@ -125,52 +148,37 @@ export default function Income() {
               <div className="form-row">
                 <div className="field">
                   <label>Date received *</label>
-                  <input
-                    type="date"
-                    value={date}
-                    onChange={function(e) { setDate(e.target.value) }}
-                  />
+                  <input type="date" value={date} onChange={function(e) { setDate(e.target.value) }} />
                 </div>
                 <div className="field" style={{ flex: 2 }}>
                   <label>Customer name *</label>
-                  <input
-                    type="text"
-                    value={customer}
-                    placeholder="Customer name"
-                    onChange={function(e) { setCustomer(e.target.value) }}
-                  />
+                  <input type="text" value={customer} placeholder="Customer name"
+                    onChange={function(e) { setCustomer(e.target.value) }} />
                 </div>
                 <div className="field">
-                  <label>Job #</label>
-                  <input
-                    type="text"
-                    value={jobNumber}
-                    placeholder="optional"
-                    onChange={function(e) { setJobNumber(e.target.value) }}
-                  />
+                  <label>Job # (auto-marks paid)</label>
+                  <input type="text" value={jobNumber} placeholder="e.g. 1"
+                    onChange={function(e) { onJobNumberChange(e.target.value) }} />
                 </div>
               </div>
+
+              {autoPaid && (
+                <div style={{ padding: '10px 14px', background: '#dcfce7', borderRadius: 8, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 16 }}>✓</span>
+                  <span>Job #{jobNumber} found — <strong>{autoPaid.customer}</strong> for <strong>{fmt(autoPaid.invoice_amount)}</strong>. Saving this payment will automatically mark it as <strong>Paid</strong> on the dashboard and Job Log.</span>
+                </div>
+              )}
 
               <div className="form-row">
                 <div className="field">
                   <label>Invoice amount ($)</label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={amountInvoiced}
-                    placeholder="0.00"
-                    onChange={onMoneyInput(setAmountInvoiced)}
-                  />
+                  <input type="text" inputMode="decimal" value={amountInvoiced} placeholder="0.00"
+                    onChange={function(e) { setAmountInvoiced(e.target.value) }} />
                 </div>
                 <div className="field">
                   <label>Amount received ($) *</label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={amountReceived}
-                    placeholder="0.00"
-                    onChange={onMoneyInput(setAmountReceived)}
-                  />
+                  <input type="text" inputMode="decimal" value={amountReceived} placeholder="0.00"
+                    onChange={function(e) { setAmountReceived(e.target.value) }} />
                 </div>
                 <div className="field">
                   <label>Payment method</label>
@@ -184,12 +192,8 @@ export default function Income() {
 
               <div className="field">
                 <label>Note (optional)</label>
-                <input
-                  type="text"
-                  value={note}
-                  placeholder="e.g. deposit, final payment, partial..."
-                  onChange={function(e) { setNote(e.target.value) }}
-                />
+                <input type="text" value={note} placeholder="e.g. deposit, final payment, partial..."
+                  onChange={function(e) { setNote(e.target.value) }} />
               </div>
 
               <div className="btn-row">
@@ -204,48 +208,47 @@ export default function Income() {
         <div className="card">
           <div className="card-header"><h3>Payment history</h3></div>
           <div className="table-wrap">
-            {loading
-              ? <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</div>
-              : txns.length === 0
-                ? <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No payments recorded yet.</div>
-                : (
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Date</th>
-                        <th>Customer</th>
-                        <th>Job #</th>
-                        <th>Method</th>
-                        <th>Note</th>
-                        <th className="text-right">Amount</th>
-                        <th></th>
+            {loading ? (
+              <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</div>
+            ) : txns.length === 0 ? (
+              <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No payments recorded yet.</div>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Customer</th>
+                    <th>Job #</th>
+                    <th>Method</th>
+                    <th>Note</th>
+                    <th className="text-right">Amount</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {txns.map(function(t) {
+                    return (
+                      <tr key={t.id}>
+                        <td>{t.date}</td>
+                        <td style={{ fontWeight: 500 }}>{t.vendor}</td>
+                        <td className="text-center">{t.job_number ? '#' + t.job_number : '—'}</td>
+                        <td>{t.method}</td>
+                        <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{t.note}</td>
+                        <td className="text-right mono" style={{ fontWeight: 600, color: '#15803d' }}>{fmt(t.amount)}</td>
+                        <td>
+                          <button className="btn btn-sm btn-danger" onClick={function() { deleteTxn(t.id) }}>Remove</button>
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {txns.map(function(t) {
-                        return (
-                          <tr key={t.id}>
-                            <td>{t.date}</td>
-                            <td style={{ fontWeight: 500 }}>{t.vendor}</td>
-                            <td className="text-center">{t.job_number || '—'}</td>
-                            <td>{t.method}</td>
-                            <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{t.note}</td>
-                            <td className="text-right mono" style={{ fontWeight: 600, color: '#15803d' }}>{fmt(t.amount)}</td>
-                            <td>
-                              <button className="btn btn-sm btn-danger" onClick={function() { deleteTxn(t.id) }}>Remove</button>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                      <tr style={{ background: 'var(--gray)' }}>
-                        <td colSpan={5} style={{ fontWeight: 600, fontSize: 12 }}>TOTAL RECEIVED</td>
-                        <td className="text-right mono" style={{ fontWeight: 700, color: '#15803d' }}>{fmt(totalReceived)}</td>
-                        <td></td>
-                      </tr>
-                    </tbody>
-                  </table>
-                )
-            }
+                    )
+                  })}
+                  <tr style={{ background: 'var(--gray)' }}>
+                    <td colSpan={5} style={{ fontWeight: 600, fontSize: 12 }}>TOTAL RECEIVED</td>
+                    <td className="text-right mono" style={{ fontWeight: 700, color: '#15803d' }}>{fmt(totalReceived)}</td>
+                    <td></td>
+                  </tr>
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
 
