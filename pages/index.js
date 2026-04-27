@@ -23,8 +23,12 @@ export default function Dashboard() {
     var irsPaid       = txns.filter(function(t) { return t.category === 'IRS Tax Payment' }).reduce(function(s,t) { return s+Number(t.amount) }, 0)
     var statePaid     = txns.filter(function(t) { return t.category === 'State Tax Payment' }).reduce(function(s,t) { return s+Number(t.amount) }, 0)
     var totalTaxPaid  = irsPaid + statePaid
-    var invoiced      = jobs.reduce(function(s,j) { return s+Number(j.invoice_amount||0) }, 0)
-    var outstanding   = Math.max(invoiced - income, 0)
+
+    // Outstanding = only jobs that are NOT marked paid
+    var outstanding = jobs
+      .filter(function(j) { return j.status !== 'paid' })
+      .reduce(function(s,j) { return s + Number(j.invoice_amount || 0) }, 0)
+
     var target        = Number(sett.revenue_target || 120000)
     var fedRate       = Number(sett.federal_tax_rate || 0.22)
     var stateRate     = Number(sett.state_tax_rate || 0.0425)
@@ -42,7 +46,7 @@ export default function Dashboard() {
     setD({
       income, expenses, payrollPaid, distributions,
       irsPaid, statePaid, totalTaxPaid,
-      invoiced, outstanding, profit, margin,
+      outstanding, profit, margin,
       target, tax, passThrough, expByCat, jobs
     })
   }
@@ -86,9 +90,9 @@ export default function Dashboard() {
           <div className="card metric-card" style={{ borderTop: d.outstanding > 0 ? '3px solid #b91c1c' : '3px solid #15803d' }}>
             <div className="label">Outstanding invoices</div>
             <div className="value" style={{ color: d.outstanding > 0 ? '#b91c1c' : '#15803d' }}>
-              {d.outstanding > 0 ? fmt(d.outstanding) : fmt(0)}
+              {fmt(d.outstanding)}
             </div>
-            <div className="sub">{d.outstanding > 0 ? 'not yet collected' : 'all collected'}</div>
+            <div className="sub">{d.outstanding > 0 ? 'unpaid jobs' : 'all jobs paid'}</div>
           </div>
         </div>
 
@@ -155,7 +159,7 @@ export default function Dashboard() {
                 ? <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No expenses logged yet.</p>
                 : Object.entries(d.expByCat).sort(function(a,b) { return b[1]-a[1] }).map(function(entry) {
                     return (
-                      <div key={entry[0]} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                      <div key={entry[0]} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border)' }})>
                         <span>{entry[0]}</span>
                         <span className="mono" style={{ fontWeight: 500 }}>{fmt(entry[1])}</span>
                       </div>
