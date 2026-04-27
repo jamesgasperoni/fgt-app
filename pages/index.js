@@ -24,19 +24,18 @@ export default function Dashboard() {
     var statePaid     = txns.filter(function(t) { return t.category === 'State Tax Payment' }).reduce(function(s,t) { return s+Number(t.amount) }, 0)
     var totalTaxPaid  = irsPaid + statePaid
 
-    // Outstanding = only jobs that are NOT marked paid
     var outstanding = jobs
       .filter(function(j) { return j.status !== 'paid' })
       .reduce(function(s,j) { return s + Number(j.invoice_amount || 0) }, 0)
 
-    var target        = Number(sett.revenue_target || 120000)
-    var fedRate       = Number(sett.federal_tax_rate || 0.22)
-    var stateRate     = Number(sett.state_tax_rate || 0.0425)
-    var employerFica  = payrollPaid * 0.0765
-    var passThrough   = income - expenses - payrollPaid - employerFica
-    var tax           = calcTaxes(payrollPaid, passThrough, fedRate, stateRate)
-    var profit        = income - expenses - payrollPaid
-    var margin        = income > 0 ? profit / income : 0
+    var target       = Number(sett.revenue_target || 120000)
+    var fedRate      = Number(sett.federal_tax_rate || 0.22)
+    var stateRate    = Number(sett.state_tax_rate || 0.0425)
+    var employerFica = payrollPaid * 0.0765
+    var passThrough  = income - expenses - payrollPaid - employerFica
+    var tax          = calcTaxes(payrollPaid, passThrough, fedRate, stateRate)
+    var profit       = income - expenses - payrollPaid
+    var margin       = income > 0 ? profit / income : 0
 
     var expByCat = {}
     txns.filter(function(t) { return t.type === 'expense' }).forEach(function(t) {
@@ -155,17 +154,18 @@ export default function Dashboard() {
           <div className="card">
             <div className="card-header"><h3>Expenses by category</h3></div>
             <div className="card-body">
-              {Object.keys(d.expByCat).length === 0
-                ? <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No expenses logged yet.</p>
-                : Object.entries(d.expByCat).sort(function(a,b) { return b[1]-a[1] }).map(function(entry) {
-                    return (
-                      <div key={entry[0]} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border)' }})>
-                        <span>{entry[0]}</span>
-                        <span className="mono" style={{ fontWeight: 500 }}>{fmt(entry[1])}</span>
-                      </div>
-                    )
-                  })
-              }
+              {Object.keys(d.expByCat).length === 0 ? (
+                <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No expenses logged yet.</p>
+              ) : (
+                Object.entries(d.expByCat).sort(function(a,b) { return b[1]-a[1] }).map(function(entry) {
+                  return (
+                    <div key={entry[0]} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                      <span>{entry[0]}</span>
+                      <span className="mono" style={{ fontWeight: 500 }}>{fmt(entry[1])}</span>
+                    </div>
+                  )
+                })
+              )}
             </div>
           </div>
 
