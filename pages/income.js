@@ -31,16 +31,16 @@ export default function Income() {
   }
 
   async function save() {
-    if (!date || !customer.trim() || !amountReceived || Number(amountReceived) <= 0) {
+    if (!date || !customer.trim() || !amountReceived || parseFloat(amountReceived) <= 0) {
       alert('Date, customer name, and amount received are required.')
       return
     }
-    var noteText = note || (amountInvoiced ? 'Invoiced: $' + Number(amountInvoiced).toFixed(2) : null)
+    var noteText = note || (amountInvoiced ? 'Invoiced: $' + parseFloat(amountInvoiced).toFixed(2) : null)
     var res = await supabase.from('transactions').insert({
       date: date,
       vendor: customer.trim(),
       category: 'Revenue',
-      amount: Number(amountReceived),
+      amount: parseFloat(amountReceived),
       method: method,
       job_number: jobNumber || null,
       note: noteText,
@@ -71,6 +71,23 @@ export default function Income() {
   function showToast(m) {
     setToast(m)
     setTimeout(function() { setToast('') }, 2500)
+  }
+
+  function clearForm() {
+    setDate(today())
+    setCustomer('')
+    setAmountInvoiced('')
+    setAmountReceived('')
+    setMethod('Check')
+    setJobNumber('')
+    setNote('')
+  }
+
+  function onMoneyInput(setter) {
+    return function(e) {
+      var val = e.target.value.replace(/[^0-9.]/g, '')
+      setter(val)
+    }
   }
 
   var totalReceived = txns.reduce(function(s, t) { return s + Number(t.amount) }, 0)
@@ -108,7 +125,11 @@ export default function Income() {
               <div className="form-row">
                 <div className="field">
                   <label>Date received *</label>
-                  <input type="date" value={date} onChange={function(e) { setDate(e.target.value) }} />
+                  <input
+                    type="date"
+                    value={date}
+                    onChange={function(e) { setDate(e.target.value) }}
+                  />
                 </div>
                 <div className="field" style={{ flex: 2 }}>
                   <label>Customer name *</label>
@@ -134,23 +155,21 @@ export default function Income() {
                 <div className="field">
                   <label>Invoice amount ($)</label>
                   <input
-                    type="number"
-                    step="0.01"
-                    min="0"
+                    type="text"
+                    inputMode="decimal"
                     value={amountInvoiced}
                     placeholder="0.00"
-                    onChange={function(e) { setAmountInvoiced(e.target.value) }}
+                    onChange={onMoneyInput(setAmountInvoiced)}
                   />
                 </div>
                 <div className="field">
                   <label>Amount received ($) *</label>
                   <input
-                    type="number"
-                    step="0.01"
-                    min="0"
+                    type="text"
+                    inputMode="decimal"
                     value={amountReceived}
                     placeholder="0.00"
-                    onChange={function(e) { setAmountReceived(e.target.value) }}
+                    onChange={onMoneyInput(setAmountReceived)}
                   />
                 </div>
                 <div className="field">
@@ -175,15 +194,7 @@ export default function Income() {
 
               <div className="btn-row">
                 <button className="btn btn-primary" onClick={save}>Save payment</button>
-                <button className="btn" onClick={function() {
-                  setDate(today())
-                  setCustomer('')
-                  setAmountInvoiced('')
-                  setAmountReceived('')
-                  setMethod('Check')
-                  setJobNumber('')
-                  setNote('')
-                }}>Clear</button>
+                <button className="btn" onClick={clearForm}>Clear</button>
               </div>
 
             </div>
