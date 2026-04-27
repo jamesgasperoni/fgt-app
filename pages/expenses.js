@@ -69,6 +69,11 @@ export default function Expenses() {
     setLoading(false)
   }
 
+  function onMoneyInput(e) {
+    var val = e.target.value.replace(/[^0-9.]/g, '')
+    setAmount(val)
+  }
+
   function onVendorChange(val) {
     setVendor(val)
     var norm = normVendor(val)
@@ -110,7 +115,7 @@ export default function Expenses() {
   }
 
   async function handleSave() {
-    if (!date || !vendor.trim() || !amount || Number(amount) <= 0) {
+    if (!date || !vendor.trim() || !amount || parseFloat(amount) <= 0) {
       alert('Please fill in date, vendor name, and amount.')
       return
     }
@@ -133,7 +138,7 @@ export default function Expenses() {
   async function doSave(cat) {
     var special = SPECIAL_CATS[cat]
     var txnType = special ? special.type : 'expense'
-    var amt = Number(amount)
+    var amt = parseFloat(amount)
 
     var res = await supabase.from('transactions').insert({
       date: date,
@@ -160,10 +165,10 @@ export default function Expenses() {
       )
     }
 
-    var msg = txnType === 'payroll'      ? 'Payroll saved — S-Corp updated' :
-              txnType === 'distribution' ? 'Distribution saved — S-Corp updated' :
-              cat === 'IRS Tax Payment'  ? 'IRS payment saved — Tax Planner updated' :
-              cat === 'State Tax Payment'? 'State payment saved — Tax Planner updated' :
+    var msg = txnType === 'payroll'       ? 'Payroll saved — S-Corp updated' :
+              txnType === 'distribution'  ? 'Distribution saved — S-Corp updated' :
+              cat === 'IRS Tax Payment'   ? 'IRS payment saved — Tax Planner updated' :
+              cat === 'State Tax Payment' ? 'State payment saved — Tax Planner updated' :
               'Transaction saved'
 
     showToast(msg)
@@ -285,8 +290,13 @@ export default function Expenses() {
                 </div>
                 <div className="field">
                   <label>Amount ($) *</label>
-                  <input type="number" step="0.01" min="0" placeholder="0.00" value={amount}
-                    onChange={function(e) { setAmount(e.target.value) }} />
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={amount}
+                    placeholder="0.00"
+                    onChange={onMoneyInput}
+                  />
                 </div>
               </div>
 
@@ -345,15 +355,15 @@ export default function Expenses() {
                 </div>
               )}
 
-              {(category === 'IRS Tax Payment') && (
+              {category === 'IRS Tax Payment' && (
                 <div className="alert alert-info">
-                  <strong>→ IRS Tax Payment:</strong> This will automatically reduce your remaining IRS tax balance on the Dashboard and Tax Planner.
+                  <strong>→ IRS Tax Payment:</strong> Automatically reduces your remaining IRS tax balance on the Dashboard and Tax Planner.
                 </div>
               )}
 
-              {(category === 'State Tax Payment') && (
+              {category === 'State Tax Payment' && (
                 <div className="alert alert-info">
-                  <strong>→ State Tax Payment:</strong> This will automatically reduce your remaining Michigan tax balance on the Dashboard and Tax Planner.
+                  <strong>→ State Tax Payment:</strong> Automatically reduces your remaining Michigan tax balance on the Dashboard and Tax Planner.
                 </div>
               )}
 
@@ -365,7 +375,7 @@ export default function Expenses() {
                 </div>
                 <div className="field" style={{ flex: 3 }}>
                   <label>Note (optional)</label>
-                  <input type="text" placeholder="e.g. Q1 estimated tax payment, check #204..."
+                  <input type="text" placeholder="e.g. AquaDefense 1 gal, Q1 estimated tax payment..."
                     value={note} onChange={function(e) { setNote(e.target.value) }} />
                 </div>
               </div>
