@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import Layout from '../components/Layout'
 import { supabase } from '../lib/supabase'
-import { fmt, normVendor, CAT_LIST, CAT_BADGE, catBadge } from '../lib/utils'
+import { fmt, normVendor, CAT_LIST, CAT_BADGE } from '../lib/utils'
 
 function today() {
   return new Date().toISOString().slice(0, 10)
@@ -31,6 +31,12 @@ var ALL_CATS = CAT_LIST.concat([
   'IRS Tax Payment',
   'State Tax Payment',
 ])
+
+function toNum(val) {
+  if (val === null || val === undefined || val === '') return 0
+  var n = parseFloat(String(val).replace(/[^0-9.]/g, ''))
+  return isNaN(n) ? 0 : n
+}
 
 export default function Expenses() {
   var [txns, setTxns] = useState([])
@@ -67,11 +73,6 @@ export default function Expenses() {
     }
     setVendors(vm)
     setLoading(false)
-  }
-
-  function onMoneyInput(e) {
-    var val = e.target.value.replace(/[^0-9.]/g, '')
-    setAmount(val)
   }
 
   function onVendorChange(val) {
@@ -115,30 +116,33 @@ export default function Expenses() {
   }
 
   async function handleSave() {
-    if (!date || !vendor.trim() || !amount || parseFloat(amount) <= 0) {
-      alert('Please fill in date, vendor name, and amount.')
-      return
-    }
-    var norm = normVendor(vendor)
+    var amt = toNum(amount)
+    var d = (date || '').trim()
+    var v = (vendor || '').trim()
+
+    if (!d) { alert('Please fill in the date.'); return }
+    if (!v) { alert('Please fill in the vendor name.'); return }
+    if (amt <= 0) { alert('Please enter a valid amount greater than zero.'); return }
+
+    var norm = normVendor(v)
     if (!category) {
       if (vendors[norm]) {
-        await doSave(vendors[norm].category)
+        await doSave(vendors[norm].category, amt)
       } else {
-        setModal({ vendor: vendor.trim(), norm: norm })
+        setModal({ vendor: v, norm: norm })
         setModalCat('')
       }
       return
     }
     if (!vendors[norm]) {
-      await saveNewVendor(norm, vendor.trim(), category)
+      await saveNewVendor(norm, v, category)
     }
-    await doSave(category)
+    await doSave(category, amt)
   }
 
-  async function doSave(cat) {
+  async function doSave(cat, amt) {
     var special = SPECIAL_CATS[cat]
     var txnType = special ? special.type : 'expense'
-    var amt = parseFloat(amount)
 
     var res = await supabase.from('transactions').insert({
       date: date,
@@ -158,7 +162,7 @@ export default function Expenses() {
 
     if (txnType === 'payroll') {
       var sRes = await supabase.from('settings').select('value').eq('key', 'ytd_payroll_paid').single()
-      var current = Number((sRes.data && sRes.data.value) || 0)
+      var current = toNum((sRes.data && sRes.data.value) || 0)
       await supabase.from('settings').upsert(
         { key: 'ytd_payroll_paid', value: String(current + amt) },
         { onConflict: 'key' }
@@ -189,7 +193,7 @@ export default function Expenses() {
     await saveNewVendor(modal.norm, modal.vendor, modalCat)
     setModal(null)
     setCategory(modalCat)
-    await doSave(modalCat)
+    await doSave(modalCat, toNum(amount))
   }
 
   async function deleteTxn(id) {
@@ -291,11 +295,12 @@ export default function Expenses() {
                 <div className="field">
                   <label>Amount ($) *</label>
                   <input
-                    type="text"
-                    inputMode="decimal"
+                    type="number"
+                    step="any"
+                    min="0"
                     value={amount}
                     placeholder="0.00"
-                    onChange={onMoneyInput}
+                    onChange={function(e) { setAmount(e.target.value) }}
                   />
                 </div>
               </div>
