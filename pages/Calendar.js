@@ -1,20 +1,10 @@
 import { useEffect, useState } from 'react'
 import Layout from '../components/Layout'
 import { supabase } from '../lib/supabase'
-import { fmt, CAT_BADGE } from '../lib/utils'
+import { fmt } from '../lib/utils'
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
 const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
-
-function getDaysInMonth(year, month) {
-  return new Date(year, month + 1, 0).getDate()
-}
-function getFirstDayOfMonth(year, month) {
-  return new Date(year, month, 1).getDay()
-}
-function toDateStr(year, month, day) {
-  return `${year}-${String(month + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`
-}
 
 const TYPE_STYLE = {
   income:       { bg: '#dcfce7', color: '#15803d', label: 'Payment in' },
@@ -23,6 +13,22 @@ const TYPE_STYLE = {
   payroll:      { bg: '#ede9fe', color: '#6d28d9', label: 'Payroll' },
   distribution: { bg: '#fce7f3', color: '#be185d', label: 'Distribution' },
   job:          { bg: '#fef9c3', color: '#a16207', label: 'Job day' },
+}
+
+function getDaysInMonth(year, month) {
+  return new Date(year, month + 1, 0).getDate()
+}
+
+function getFirstDay(year, month) {
+  return new Date(year, month, 1).getDay()
+}
+
+function padded(n) {
+  return String(n).padStart(2, '0')
+}
+
+function toDateStr(year, month, day) {
+  return year + '-' + padded(month + 1) + '-' + padded(day)
 }
 
 export default function Calendar() {
@@ -35,100 +41,117 @@ export default function Calendar() {
   const [selected, setSelected] = useState(null)
   const [view, setView] = useState('month')
 
-  useEffect(() => { load() }, [])
+  useEffect(function() { load() }, [])
 
   async function load() {
-    const [tRes, jRes] = await Promise.all([
-      supabase.from('transactions').select('*'),
-      supabase.from('jobs').select('*'),
-    ])
+    var tRes = await supabase.from('transactions').select('*')
+    var jRes = await supabase.from('jobs').select('*')
     setTxns(tRes.data || [])
     setJobs(jRes.data || [])
     setLoading(false)
   }
 
   function buildEventMap() {
-    const map = {}
-    const add = (date, event) => {
+    var map = {}
+
+    function add(date, event) {
       if (!date) return
       if (!map[date]) map[date] = []
       map[date].push(event)
     }
-    txns.forEach(t => {
+
+    for (var i = 0; i < txns.length; i++) {
+      var t = txns[i]
       add(t.date, {
         type: t.type,
         label: t.vendor,
         amount: Number(t.amount),
         category: t.category,
         note: t.note,
-        id: t.id,
       })
-    })
-    jobs.forEach(j => {
-      if (!j.start_date) return
-      const start = new Date(j.start_date + 'T00:00:00')
-      const end = j.end_date ? new Date(j.end_date + 'T00:00:00') : start
-      let cur = new Date(start)
+    }
+
+    for (var j = 0; j < jobs.length; j++) {
+      var job = jobs[j]
+      if (!job.start_date) continue
+      var start = new Date(job.start_date + 'T00:00:00')
+      var end = job.end_date ? new Date(job.end_date + 'T00:00:00') : new Date(start)
+      var cur = new Date(start)
       while (cur <= end) {
-        const ds = cur.toISOString().slice(0, 10)
+        var ds = cur.toISOString().slice(0, 10)
         add(ds, {
           type: 'job',
-          label: j.customer,
-          location: j.location,
-          job_number: j.job_number,
-          invoice: Number(j.invoice_amount || 0),
-          helper_days: Number(j.helper_days || 0),
-          id: j.id,
+          label: job.customer,
+          location: job.location,
+          job_number: job.job_number,
+          invoice: Number(job.invoice_amount || 0),
+          helper_days: Number(job.helper_days || 0),
         })
         cur.setDate(cur.getDate() + 1)
       }
-    })
+    }
+
     return map
   }
 
-  const eventMap = buildEventMap()
+  var eventMap = buildEventMap()
+  var daysInMonth = getDaysInMonth(year, month)
+  var firstDay = getFirstDay(year, month)
+  var todayStr = now.toISOString().slice(0, 10)
+  var monthPrefix = year + '-' + padded(month + 1)
+
+  var monthEvents = []
+  var keys = Object.keys(eventMap)
+  for (var k = 0; k < keys.length; k++) {
+    if (keys[k].indexOf(monthPrefix) === 0) {
+      monthEvents = monthEvents.concat(eventMap[keys[k]])
+    }
+  }
+
+  var monthIncome = 0
+  var monthExpenses = 0
+  var monthJobDays = 0
+  for (var m = 0; m < monthEvents.length; m++) {
+    var ev = monthEvents[m]
+    if (ev.type === 'income' || ev.type === 'deposit') monthIncome += ev.amount || 0
+    if (ev.type === 'expense' || ev.type === 'payroll' || ev.type === 'distribution') monthExpenses += ev.amount || 0
+    if (ev.type === 'job') monthJobDays++
+  }
+
+  var listEvents = []
+  var sortedKeys = keys.filter(function(d) { return d.indexOf(monthPrefix) === 0 }).sort()
+  for (var sk = 0; sk < sortedKeys.length; sk++) {
+    var dayEvs = eventMap[sortedKeys[sk]]
+    for (var de = 0; de < dayEvs.length; de++) {
+      listEvents.push(Object.assign({}, dayEvs[de], { date: sortedKeys[sk] }))
+    }
+  }
+
+  var selectedEvents = selected ? (eventMap[selected] || []) : []
 
   function prevMonth() {
-    if (month === 0) { setYear(y => y - 1); setMonth(11) }
-    else setMonth(m => m - 1)
     setSelected(null)
+    if (month === 0) { setYear(function(y) { return y - 1 }); setMonth(11) }
+    else setMonth(function(m) { return m - 1 })
   }
+
   function nextMonth() {
-    if (month === 11) { setYear(y => y + 1); setMonth(0) }
-    else setMonth(m => m + 1)
     setSelected(null)
+    if (month === 11) { setYear(function(y) { return y + 1 }); setMonth(0) }
+    else setMonth(function(m) { return m + 1 })
   }
 
-  const daysInMonth = getDaysInMonth(year, month)
-  const firstDay = getFirstDayOfMonth(year, month)
-  const todayStr = now.toISOString().slice(0, 10)
-
-  const monthPrefix = `${year}-${String(month+1).padStart(2,'0')}`
-  const monthEvents = Object.entries(eventMap)
-    .filter(([d]) => d.startsWith(monthPrefix))
-    .flatMap(([,evs]) => evs)
-  const monthIncome = monthEvents.filter(e => e.type === 'income' || e.type === 'deposit').reduce((s,e) => s + (e.amount||0), 0)
-  const monthExpenses = monthEvents.filter(e => ['expense','payroll','distribution'].includes(e.type)).reduce((s,e) => s + (e.amount||0), 0)
-  const monthJobDays = monthEvents.filter(e => e.type === 'job').length
-
-  const selectedEvents = selected ? (eventMap[selected] || []) : []
-
-  const listEvents = Object.entries(eventMap)
-    .filter(([d]) => d.startsWith(monthPrefix))
-    .sort(([a],[b]) => a.localeCompare(b))
-    .flatMap(([date, evs]) => evs.map(e => ({ ...e, date })))
-
-  function DayDot({ type }) {
-    const s = TYPE_STYLE[type] || TYPE_STYLE.expense
-    return <div style={{ width: 7, height: 7, borderRadius: '50%', background: s.color, flexShrink: 0 }} />
+  function isIn(type) {
+    return type === 'income' || type === 'deposit'
   }
 
-  function EventPill({ e }) {
-    const s = TYPE_STYLE[e.type] || TYPE_STYLE.expense
+  if (loading) {
     return (
-      <div style={{ background: s.bg, color: s.color, borderRadius: 4, padding: '1px 5px', fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 1 }}>
-        {e.type === 'job' ? `Job: ${e.label}` : e.type === 'income' ? `+ ${e.label}` : `- ${e.label}`}
-      </div>
+      <Layout title="Calendar">
+        <div className="page-body">
+          <p style={{ color: 'var(--text-muted)' }}>Loading...</p>
+        </div>
+      </Layout>
     )
   }
 
@@ -137,8 +160,8 @@ export default function Calendar() {
       <div className="page-header">
         <h2>Calendar</h2>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className={`btn btn-sm${view === 'month' ? ' btn-primary' : ''}`} onClick={() => setView('month')}>Month</button>
-          <button className={`btn btn-sm${view === 'list' ? ' btn-primary' : ''}`} onClick={() => setView('list')}>List</button>
+          <button className={'btn btn-sm' + (view === 'month' ? ' btn-primary' : '')} onClick={function() { setView('month') }}>Month</button>
+          <button className={'btn btn-sm' + (view === 'list' ? ' btn-primary' : '')} onClick={function() { setView('list') }}>List</button>
         </div>
       </div>
       <div className="page-body">
@@ -165,48 +188,55 @@ export default function Calendar() {
         <div className="card">
           <div className="card-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-              <button className="btn btn-sm" onClick={prevMonth}>‹ Prev</button>
+              <button className="btn btn-sm" onClick={prevMonth}>Prev</button>
               <span style={{ fontWeight: 600, fontSize: 16, minWidth: 160, textAlign: 'center' }}>{MONTHS[month]} {year}</span>
-              <button className="btn btn-sm" onClick={nextMonth}>Next ›</button>
+              <button className="btn btn-sm" onClick={nextMonth}>Next</button>
             </div>
-            <button className="btn btn-sm" onClick={() => { setYear(now.getFullYear()); setMonth(now.getMonth()) }}>Today</button>
+            <button className="btn btn-sm" onClick={function() { setYear(now.getFullYear()); setMonth(now.getMonth()) }}>Today</button>
           </div>
 
           {view === 'month' && (
-            <div style={{ padding: '0 0 12px' }}>
+            <div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', borderBottom: '1px solid var(--border)' }}>
-                {DAYS.map(d => (
-                  <div key={d} style={{ padding: '8px 0', textAlign: 'center', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.04em' }}>{d}</div>
-                ))}
+                {DAYS.map(function(d) {
+                  return <div key={d} style={{ padding: '8px 0', textAlign: 'center', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>{d}</div>
+                })}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)' }}>
-                {Array.from({ length: firstDay }).map((_, i) => (
-                  <div key={`empty-${i}`} style={{ minHeight: 90, borderRight: '0.5px solid var(--border)', borderBottom: '0.5px solid var(--border)', background: 'var(--gray)' }} />
-                ))}
-                {Array.from({ length: daysInMonth }).map((_, i) => {
-                  const day = i + 1
-                  const dateStr = toDateStr(year, month, day)
-                  const events = eventMap[dateStr] || []
-                  const isToday = dateStr === todayStr
-                  const isSelected = dateStr === selected
-                  const hasIncome = events.some(e => e.type === 'income' || e.type === 'deposit')
-                  const hasExpense = events.some(e => ['expense','payroll','distribution'].includes(e.type))
-                  const hasJob = events.some(e => e.type === 'job')
+                {Array.from({ length: firstDay }).map(function(_, i) {
+                  return <div key={'e' + i} style={{ minHeight: 90, borderRight: '0.5px solid var(--border)', borderBottom: '0.5px solid var(--border)', background: 'var(--gray)' }} />
+                })}
+                {Array.from({ length: daysInMonth }).map(function(_, i) {
+                  var day = i + 1
+                  var dateStr = toDateStr(year, month, day)
+                  var events = eventMap[dateStr] || []
+                  var isToday = dateStr === todayStr
+                  var isSel = dateStr === selected
+                  var hasIncome = events.some(function(e) { return e.type === 'income' || e.type === 'deposit' })
+                  var hasExpense = events.some(function(e) { return e.type === 'expense' || e.type === 'payroll' || e.type === 'distribution' })
+                  var hasJob = events.some(function(e) { return e.type === 'job' })
+
                   return (
-                    <div key={day} onClick={() => setSelected(isSelected ? null : dateStr)}
-                      style={{ minHeight: 90, borderRight: '0.5px solid var(--border)', borderBottom: '0.5px solid var(--border)', padding: '6px 6px 4px', cursor: events.length ? 'pointer' : 'default', background: isSelected ? '#dbeafe' : isToday ? '#fffbeb' : 'var(--card-bg)', transition: 'background 0.1s' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-                        <span style={{ fontSize: 13, fontWeight: isToday ? 700 : 400, color: isToday ? '#1d4ed8' : 'var(--text)', background: isToday ? '#dbeafe' : 'transparent', width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{day}</span>
-                        <div style={{ display: 'flex', gap: 2 }}>
-                          {hasJob && <DayDot type="job" />}
-                          {hasIncome && <DayDot type="income" />}
-                          {hasExpense && <DayDot type="expense" />}
+                    <div key={day}
+                      onClick={function() { setSelected(isSel ? null : dateStr) }}
+                      style={{ minHeight: 90, borderRight: '0.5px solid var(--border)', borderBottom: '0.5px solid var(--border)', padding: '6px', cursor: events.length ? 'pointer' : 'default', background: isSel ? '#dbeafe' : isToday ? '#fffbeb' : 'var(--card-bg)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <span style={{ fontSize: 13, fontWeight: isToday ? 700 : 400, color: isToday ? '#1d4ed8' : 'var(--text)', width: 22, height: 22, borderRadius: '50%', background: isToday ? '#dbeafe' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{day}</span>
+                        <div style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                          {hasJob && <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#a16207' }} />}
+                          {hasIncome && <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#15803d' }} />}
+                          {hasExpense && <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#b91c1c' }} />}
                         </div>
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                        {events.slice(0, 3).map((e, idx) => <EventPill key={idx} e={e} />)}
-                        {events.length > 3 && <div style={{ fontSize: 10, color: 'var(--text-muted)', paddingLeft: 2 }}>+{events.length - 3} more</div>}
-                      </div>
+                      {events.slice(0, 3).map(function(e, idx) {
+                        var s = TYPE_STYLE[e.type] || TYPE_STYLE.expense
+                        return (
+                          <div key={idx} style={{ background: s.bg, color: s.color, borderRadius: 4, padding: '1px 5px', fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 1 }}>
+                            {e.type === 'job' ? 'Job: ' + e.label : e.label}
+                          </div>
+                        )
+                      })}
+                      {events.length > 3 && <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>+{events.length - 3} more</div>}
                     </div>
                   )
                 })}
@@ -218,21 +248,21 @@ export default function Calendar() {
             <div style={{ padding: '0 20px 20px' }}>
               {listEvents.length === 0
                 ? <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No activity this month.</div>
-                : listEvents.map((e, idx) => {
-                  const s = TYPE_STYLE[e.type] || TYPE_STYLE.expense
+                : listEvents.map(function(e, idx) {
+                  var s = TYPE_STYLE[e.type] || TYPE_STYLE.expense
                   return (
                     <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '0.5px solid var(--border)' }}>
-                      <div style={{ width: 80, fontSize: 12, color: 'var(--text-muted)', flexShrink: 0 }}>{e.date}</div>
+                      <div style={{ width: 90, fontSize: 12, color: 'var(--text-muted)', flexShrink: 0 }}>{e.date}</div>
                       <div style={{ width: 8, height: 8, borderRadius: '50%', background: s.color, flexShrink: 0 }} />
                       <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 500, fontSize: 13 }}>{e.type === 'job' ? `Job: ${e.label}` : e.label}</div>
+                        <div style={{ fontWeight: 500, fontSize: 13 }}>{e.type === 'job' ? 'Job: ' + e.label : e.label}</div>
                         {e.note && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{e.note}</div>}
-                        {e.type === 'job' && e.location && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{e.location}{e.helper_days > 0 ? ` · Helper: ${e.helper_days} day${e.helper_days !== 1 ? 's' : ''}` : ''}</div>}
+                        {e.type === 'job' && e.location && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{e.location}{e.helper_days > 0 ? ' · Helper: ' + e.helper_days + ' day' + (e.helper_days !== 1 ? 's' : '') : ''}</div>}
                       </div>
                       <div style={{ fontSize: 11, background: s.bg, color: s.color, padding: '2px 8px', borderRadius: 20, fontWeight: 600, flexShrink: 0 }}>{s.label}</div>
                       {e.amount > 0 && (
-                        <div style={{ fontSize: 13, fontWeight: 600, minWidth: 80, textAlign: 'right', color: (e.type === 'income' || e.type === 'deposit') ? '#15803d' : '#b91c1c' }}>
-                          {(e.type === 'income' || e.type === 'deposit') ? '+' : '−'}{fmt(e.amount)}
+                        <div style={{ fontSize: 13, fontWeight: 600, minWidth: 80, textAlign: 'right', color: isIn(e.type) ? '#15803d' : '#b91c1c' }}>
+                          {isIn(e.type) ? '+' : '-'}{fmt(e.amount)}
                         </div>
                       )}
                     </div>
@@ -247,33 +277,31 @@ export default function Calendar() {
           <div className="card">
             <div className="card-header">
               <h3>{new Date(selected + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</h3>
-              <button className="btn btn-sm" onClick={() => setSelected(null)}>Close</button>
+              <button className="btn btn-sm" onClick={function() { setSelected(null) }}>Close</button>
             </div>
             <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {selectedEvents.map((e, idx) => {
-                const s = TYPE_STYLE[e.type] || TYPE_STYLE.expense
+              {selectedEvents.map(function(e, idx) {
+                var s = TYPE_STYLE[e.type] || TYPE_STYLE.expense
                 return (
                   <div key={idx} style={{ display: 'flex', gap: 14, padding: '10px 14px', background: s.bg, borderRadius: 8, alignItems: 'flex-start' }}>
                     <div style={{ flex: 1 }}>
-                      <div style={{ marginBottom: 4 }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: s.color, textTransform: 'uppercase', letterSpacing: '.05em' }}>{s.label}</span>
-                      </div>
-                      <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>
-                        {e.type === 'job' ? `Job #${e.job_number || '—'} — ${e.label}` : e.label}
+                      <div style={{ fontSize: 11, fontWeight: 700, color: s.color, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>{s.label}</div>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>
+                        {e.type === 'job' ? 'Job #' + (e.job_number || '-') + ' - ' + e.label : e.label}
                       </div>
                       {e.category && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{e.category}</div>}
                       {e.note && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{e.note}</div>}
                       {e.type === 'job' && (
                         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                          {e.location && <span style={{ marginRight: 12 }}>📍 {e.location}</span>}
-                          {e.helper_days > 0 && <span>👷 Helper: {e.helper_days} day{e.helper_days !== 1 ? 's' : ''}</span>}
-                          {e.invoice > 0 && <span style={{ marginLeft: 12 }}>Invoice: {fmt(e.invoice)}</span>}
+                          {e.location ? e.location + '  ' : ''}
+                          {e.helper_days > 0 ? 'Helper: ' + e.helper_days + ' day' + (e.helper_days !== 1 ? 's' : '') : ''}
+                          {e.invoice > 0 ? '  Invoice: ' + fmt(e.invoice) : ''}
                         </div>
                       )}
                     </div>
                     {e.amount > 0 && (
                       <div style={{ fontSize: 18, fontWeight: 700, color: s.color, whiteSpace: 'nowrap' }}>
-                        {(e.type === 'income' || e.type === 'deposit') ? '+' : '−'}{fmt(e.amount)}
+                        {isIn(e.type) ? '+' : '-'}{fmt(e.amount)}
                       </div>
                     )}
                   </div>
@@ -284,12 +312,15 @@ export default function Calendar() {
         )}
 
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12, color: 'var(--text-muted)' }}>
-          {Object.entries(TYPE_STYLE).map(([type, s]) => (
-            <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: s.color }} />
-              {s.label}
-            </div>
-          ))}
+          {Object.keys(TYPE_STYLE).map(function(type) {
+            var s = TYPE_STYLE[type]
+            return (
+              <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: s.color }} />
+                {s.label}
+              </div>
+            )
+          })}
         </div>
 
       </div>
