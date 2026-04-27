@@ -24,7 +24,7 @@ export default function Dashboard() {
     var statePaid     = txns.filter(function(t) { return t.category === 'State Tax Payment' }).reduce(function(s,t) { return s+Number(t.amount) }, 0)
     var totalTaxPaid  = irsPaid + statePaid
     var invoiced      = jobs.reduce(function(s,j) { return s+Number(j.invoice_amount||0) }, 0)
-    var outstanding   = invoiced - income
+    var outstanding   = Math.max(invoiced - income, 0)
     var target        = Number(sett.revenue_target || 120000)
     var fedRate       = Number(sett.federal_tax_rate || 0.22)
     var stateRate     = Number(sett.state_tax_rate || 0.0425)
@@ -83,10 +83,12 @@ export default function Dashboard() {
             <div className="label">Business expenses</div>
             <div className="value">{fmt(d.expenses)}</div>
           </div>
-          <div className="card metric-card metric-red">
+          <div className="card metric-card" style={{ borderTop: d.outstanding > 0 ? '3px solid #b91c1c' : '3px solid #15803d' }}>
             <div className="label">Outstanding invoices</div>
-            <div className="value">{fmt(d.outstanding)}</div>
-            <div className="sub">not yet collected</div>
+            <div className="value" style={{ color: d.outstanding > 0 ? '#b91c1c' : '#15803d' }}>
+              {d.outstanding > 0 ? fmt(d.outstanding) : fmt(0)}
+            </div>
+            <div className="sub">{d.outstanding > 0 ? 'not yet collected' : 'all collected'}</div>
           </div>
         </div>
 
@@ -167,13 +169,13 @@ export default function Dashboard() {
             <div className="card-header"><h3>Owner snapshot</h3></div>
             <div className="card-body">
               {[
-                { label: 'W-2 payroll paid YTD',    value: fmt(d.payrollPaid) },
-                { label: 'Distributions paid YTD',  value: fmt(d.distributions) },
-                { label: 'Pass-through income',      value: fmt(d.passThrough) },
-                { label: 'Est. total tax burden',    value: fmt(d.tax.grandTotal) },
-                { label: 'IRS + state taxes paid',   value: fmt(d.totalTaxPaid) },
-                { label: 'Remaining tax balance',    value: fmt(taxRemaining) },
-                { label: 'Net after taxes (est.)',   value: fmt(d.passThrough - d.tax.grandTotal) },
+                { label: 'W-2 payroll paid YTD',   value: fmt(d.payrollPaid) },
+                { label: 'Distributions paid YTD', value: fmt(d.distributions) },
+                { label: 'Pass-through income',     value: fmt(d.passThrough) },
+                { label: 'Est. total tax burden',   value: fmt(d.tax.grandTotal) },
+                { label: 'IRS + state taxes paid',  value: fmt(d.totalTaxPaid) },
+                { label: 'Remaining tax balance',   value: fmt(taxRemaining) },
+                { label: 'Net after taxes (est.)',  value: fmt(d.passThrough - d.tax.grandTotal) },
               ].map(function(row) {
                 return (
                   <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
