@@ -18,22 +18,19 @@ var SPECIAL_CATS = {
   },
 }
 
-var ALL_CATS = CAT_LIST.concat(['Owner Payroll (W-2)', 'Owner Distribution'])
-
 var CAT_BADGE_ALL = Object.assign({}, CAT_BADGE, {
   'Owner Payroll (W-2)': 'badge-purple',
-  'Owner Distribution': 'badge-pink',
+  'Owner Distribution':  'badge-pink',
+  'IRS Tax Payment':     'badge-red',
+  'State Tax Payment':   'badge-orange',
 })
 
-var EMPTY_FORM = {
-  date: '',
-  vendor: '',
-  category: '',
-  amount: '',
-  method: 'Check',
-  job_number: '',
-  note: '',
-}
+var ALL_CATS = CAT_LIST.concat([
+  'Owner Payroll (W-2)',
+  'Owner Distribution',
+  'IRS Tax Payment',
+  'State Tax Payment',
+])
 
 export default function Expenses() {
   var [txns, setTxns] = useState([])
@@ -163,11 +160,13 @@ export default function Expenses() {
       )
     }
 
-    var msg = txnType === 'payroll' ? 'Payroll saved — S-Corp updated' :
+    var msg = txnType === 'payroll'      ? 'Payroll saved — S-Corp updated' :
               txnType === 'distribution' ? 'Distribution saved — S-Corp updated' :
+              cat === 'IRS Tax Payment'  ? 'IRS payment saved — Tax Planner updated' :
+              cat === 'State Tax Payment'? 'State payment saved — Tax Planner updated' :
               'Transaction saved'
-    showToast(msg)
 
+    showToast(msg)
     setDate(today())
     setVendor('')
     setCategory('')
@@ -197,7 +196,11 @@ export default function Expenses() {
 
   async function toggleCleared(id, current) {
     await supabase.from('transactions').update({ cleared: !current }).eq('id', id)
-    setTxns(function(prev) { return prev.map(function(t) { return t.id === id ? Object.assign({}, t, { cleared: !current }) : t }) })
+    setTxns(function(prev) {
+      return prev.map(function(t) {
+        return t.id === id ? Object.assign({}, t, { cleared: !current }) : t
+      })
+    })
   }
 
   function showToast(m) {
@@ -223,7 +226,9 @@ export default function Expenses() {
     list.forEach(function(t) {
       rows.push([t.date, t.vendor, t.category, Number(t.amount).toFixed(2), t.method || '', t.job_number || '', t.note || '', t.cleared ? 'Yes' : 'No'])
     })
-    var csv = rows.map(function(r) { return r.map(function(v) { return '"' + String(v).replace(/"/g, '""') + '"' }).join(',') }).join('\n')
+    var csv = rows.map(function(r) {
+      return r.map(function(v) { return '"' + String(v).replace(/"/g, '""') + '"' }).join(',')
+    }).join('\n')
     var a = document.createElement('a')
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
     a.download = 'FGT_Expenses.csv'
@@ -232,12 +237,10 @@ export default function Expenses() {
 
   var filtered = filterCat ? txns.filter(function(t) { return t.category === filterCat }) : txns
   var total = filtered.reduce(function(s, t) { return s + Number(t.amount) }, 0)
-
   var catTotals = {}
   txns.forEach(function(t) {
     catTotals[t.category] = (catTotals[t.category] || 0) + Number(t.amount)
   })
-
   var specialInfo = SPECIAL_CATS[category]
 
   return (
@@ -282,14 +285,8 @@ export default function Expenses() {
                 </div>
                 <div className="field">
                   <label>Amount ($) *</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="0.00"
-                    value={amount}
-                    onChange={function(e) { setAmount(e.target.value) }}
-                  />
+                  <input type="number" step="0.01" min="0" placeholder="0.00" value={amount}
+                    onChange={function(e) { setAmount(e.target.value) }} />
                 </div>
               </div>
 
@@ -334,6 +331,10 @@ export default function Expenses() {
                       <option>Owner Payroll (W-2)</option>
                       <option>Owner Distribution</option>
                     </optgroup>
+                    <optgroup label="Tax payments (auto-routes to Tax Planner)">
+                      <option>IRS Tax Payment</option>
+                      <option>State Tax Payment</option>
+                    </optgroup>
                   </select>
                 </div>
               </div>
@@ -344,14 +345,28 @@ export default function Expenses() {
                 </div>
               )}
 
+              {(category === 'IRS Tax Payment') && (
+                <div className="alert alert-info">
+                  <strong>→ IRS Tax Payment:</strong> This will automatically reduce your remaining IRS tax balance on the Dashboard and Tax Planner.
+                </div>
+              )}
+
+              {(category === 'State Tax Payment') && (
+                <div className="alert alert-info">
+                  <strong>→ State Tax Payment:</strong> This will automatically reduce your remaining Michigan tax balance on the Dashboard and Tax Planner.
+                </div>
+              )}
+
               <div className="form-row">
                 <div className="field">
                   <label>Job # (optional)</label>
-                  <input type="text" placeholder="e.g. 12" value={jobNumber} onChange={function(e) { setJobNumber(e.target.value) }} />
+                  <input type="text" placeholder="e.g. 12" value={jobNumber}
+                    onChange={function(e) { setJobNumber(e.target.value) }} />
                 </div>
                 <div className="field" style={{ flex: 3 }}>
                   <label>Note (optional)</label>
-                  <input type="text" placeholder="e.g. AquaDefense 1 gal, payroll check #204..." value={note} onChange={function(e) { setNote(e.target.value) }} />
+                  <input type="text" placeholder="e.g. Q1 estimated tax payment, check #204..."
+                    value={note} onChange={function(e) { setNote(e.target.value) }} />
                 </div>
               </div>
 
@@ -368,10 +383,13 @@ export default function Expenses() {
           <div className="card-header">
             <h3>
               Transactions
-              {filtered.length > 0 && <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: 12, marginLeft: 6 }}>({filtered.length})</span>}
+              {filtered.length > 0 && (
+                <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: 12, marginLeft: 6 }}>({filtered.length})</span>
+              )}
             </h3>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <select style={{ width: 'auto', fontSize: 12, padding: '4px 8px' }} value={filterCat} onChange={function(e) { setFilterCat(e.target.value) }}>
+              <select style={{ width: 'auto', fontSize: 12, padding: '4px 8px' }} value={filterCat}
+                onChange={function(e) { setFilterCat(e.target.value) }}>
                 <option value="">All categories</option>
                 {ALL_CATS.map(function(c) { return <option key={c}>{c}</option> })}
               </select>
@@ -403,13 +421,10 @@ export default function Expenses() {
                         return (
                           <tr key={t.id} style={{ opacity: t.cleared ? 0.55 : 1 }}>
                             <td className="text-center">
-                              <input
-                                type="checkbox"
-                                checked={!!t.cleared}
+                              <input type="checkbox" checked={!!t.cleared}
                                 onChange={function() { toggleCleared(t.id, t.cleared) }}
                                 style={{ width: 'auto', cursor: 'pointer' }}
-                                title="Mark as cleared in bank statement"
-                              />
+                                title="Mark as cleared in bank statement" />
                             </td>
                             <td>{t.date}</td>
                             <td style={{ fontWeight: 500 }}>{t.vendor}</td>
@@ -457,6 +472,10 @@ export default function Expenses() {
                 <optgroup label="Owner (auto-routes to S-Corp + Tax Planner)">
                   <option>Owner Payroll (W-2)</option>
                   <option>Owner Distribution</option>
+                </optgroup>
+                <optgroup label="Tax payments (auto-routes to Tax Planner)">
+                  <option>IRS Tax Payment</option>
+                  <option>State Tax Payment</option>
                 </optgroup>
               </select>
             </div>
