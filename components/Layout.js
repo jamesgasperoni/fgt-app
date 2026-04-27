@@ -7,6 +7,7 @@ const NAV = [
   { id: '/income',     label: 'Income',          icon: '↑' },
   { id: '/expenses',   label: 'Expenses',        icon: '↓' },
   { id: '/reconcile',  label: 'Reconcile',       icon: '⇌' },
+  { id: '/calendar',   label: 'Calendar',        icon: '📅' },
   { id: '/scorp',      label: 'S-Corp / Owner',  icon: '$' },
   { id: '/taxes',      label: 'Tax Planner',     icon: '%' },
   { id: '/vendors',    label: 'Vendor Memory',   icon: '☰' },
@@ -38,8 +39,8 @@ export default function Layout({ children, title }) {
               </button>
             ))}
           </nav>
-          <div style={{padding:'12px 16px', borderTop:'1px solid rgba(255,255,255,0.1)'}}>
-            <div style={{fontSize:11, opacity:0.5}}>FG Tile © 2026</div>
+          <div style={{ padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+            <div style={{ fontSize: 11, opacity: 0.5 }}>FG Tile © 2026</div>
           </div>
         </aside>
         <main className="main">{children}</main>
